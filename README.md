@@ -1,8 +1,8 @@
 # Temprature_Predictor
-A machine learning project that can predict future temperatures
+A machine learning project that can predict future temperatures given a day's temperature.
 
 ## Project Parts
-The project currently consists of 2 parts, the hardware sensors that will take measurements, and the software that will predict the future temperatures. 
+The project is meant to be a completely independent temperature predictor, consisting of the required sensors to take measurements, the software that can make future predictions, and finally a website that this information can be uploaded. Currently, there is an implementation of the first two parts. There is a README in each part with more details of each section of the project.
 
 ## License
 MIT License Copyright (c) 2023 Constantine Giantselidis 
