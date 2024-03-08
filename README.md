@@ -1,4 +1,4 @@
-# Temprature_Predictor
+# Temperature_Predictor
 A machine learning project that can predict future temperatures given a day's temperature and precipitation.
 
 ## Project Parts
