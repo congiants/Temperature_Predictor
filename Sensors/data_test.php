@@ -1,5 +1,5 @@
 <?php
-//Php for inserting weather data to your local database (with the use of xampp). Your path should look like this: C:\xampp\htdocs\temperature_predictor\data_test.php
+//Php script for inserting weather data to a local database (with the use of xampp). The script path should look like this: C:\xampp\htdocs\temperature_predictor\data_test.php (after xampp has been installed)
 
 $hostname = "localhost";
 $username = "your_username";
