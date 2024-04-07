@@ -1,4 +1,4 @@
-//Code of NodeMcu Lua ESP8266 WIFI Board for sending weather data to your php script
+//Code of NodeMcu Lua ESP8266 WIFI Board for collecting and sending weather data to the php script
 
 #include <ESP8266httpUpdate.h>
 #include <ESP8266WiFi.h>
