@@ -1,4 +1,4 @@
-# Temprature_Predictor
+# Temperature_Predictor
 The software part of the project that does the future temperature predictions.
 
 ## Required libraries
