@@ -9,7 +9,7 @@
 const String URL = "Your_local_PC_IP:your_port/temperature_predictor/data_test.php";
 
 const char* ssid = "Your_ssid";
-const char* password = "Your_password";
+const char* password = "Your_wifi_password";
 
 #define DHT_SENSOR_PIN D7
 #define DHT_SENSOR_TYPE DHT22
@@ -18,9 +18,11 @@ DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
 
 void setup() {  
   pinMode(LED_BUILTIN, OUTPUT);
+
   dht_sensor.begin();
 
   Serial.begin(9600);
+
   connectWifi();
 }
 
@@ -33,7 +35,6 @@ void connectWifi(){
 
   Serial.print("Connecting");
   
-  //Turns LED on and off while connecting. Turns LED on for 5 seconds when connected for visual debugging
   while (WiFi.status() != WL_CONNECTED){
     digitalWrite(LED_BUILTIN, LOW);
     delay(500);
@@ -47,8 +48,8 @@ void connectWifi(){
   Serial.print(WiFi.localIP());
 
   digitalWrite(LED_BUILTIN, LOW);
-  delay(5000);
-  digitalWrite(LED_BUILTIN, HIGH);
+  //delay(5000);
+  //digitalWrite(LED_BUILTIN, HIGH);
 }
 
 // the loop function runs over and over again forever
@@ -94,6 +95,6 @@ void loop() {
     Serial.println(payload);
 
   }
-
-  delay(2000);
+  delay(500);
+  ESP.deepSleep(2e6);
 }
