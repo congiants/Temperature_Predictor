@@ -1,0 +1,1 @@
+"C:\xampp\php\php.exe" -f"C:\xampp\htdocs\your_xampp_project_folder\your_php_file.php"
