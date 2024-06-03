@@ -15,6 +15,6 @@ Materials used:
 4. Place the php files inside the htdocs folder in the xampp folder
 5. Configure your php code to fit your database
 6. Configure your ESP8266 code to fit the wifi, path of the php files
-7. Setup your breadboard according to the schematic (Coming soon)
+7. Setup your breadboard according to the schematic (Pic for now)
 8. Upload the ESP8266 code to the microcontroller (Make sure the cable connecting D0 and RST is not connected during the programming phase of your device)
 9. Power up your ESP8266 and use
