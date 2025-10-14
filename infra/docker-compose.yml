@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:18.0
+    volumes: 
+      - db:/var/lib/postgresql/data
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -h localhost"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    ports:
+      - 5432:5432
