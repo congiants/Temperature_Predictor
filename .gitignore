@@ -1,1 +1,10 @@
 .env
+/secrets/db_password.txt
+pycache/
+*.pyc
+.DS_Store
+.venv/
+.pytest_cache/
+.idea/
+.vscode/
+data/
