@@ -4,6 +4,7 @@ secrets:
 
 services:
   db:
+    container_name: weather_db
     image: postgres:18.0
     volumes: 
       - db_data:/var/lib/postgresql/data
@@ -13,7 +14,7 @@ services:
     environment:
         POSTGRES_PASSWORD_FILE: /run/secrets/db_password
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -d ${POSTGRES_DB} -h localhost"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -h localhost"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -21,3 +22,6 @@ services:
       - 5432:5432
     secrets:
        - db_password
+
+volumes:
+    db_data:
