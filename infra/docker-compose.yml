@@ -1,3 +1,5 @@
+name: weather-predictor-stack
+
 secrets:
    db_password:
      file: ../secrets/db_password.txt
@@ -5,16 +7,17 @@ secrets:
 services:
   db:
     container_name: weather_db
-    image: postgres:18.0
+    image: postgis/postgis:18-3.6
     volumes: 
       - db_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
     env_file:
       - ../.env
     restart: unless-stopped
     environment:
         POSTGRES_PASSWORD_FILE: /run/secrets/db_password
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -h localhost"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-weather_db} -h localhost"]
       interval: 10s
       timeout: 3s
       retries: 3
