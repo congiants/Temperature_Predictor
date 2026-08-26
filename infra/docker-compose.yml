@@ -9,13 +9,13 @@ services:
     container_name: weather_db
     image: postgis/postgis:18-3.6
     volumes: 
-      - db_data:/var/lib/postgresql/data
+      - db_data:/var/lib/postgresql
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
-    env_file:
-      - ../.env
-    restart: unless-stopped
     environment:
-        POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-weather_db} -h localhost"]
       interval: 10s

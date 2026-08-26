@@ -6,6 +6,7 @@ from database import Base
 from geoalchemy2 import Geography
 import uuid as uuid_pkg
 
+#ORM. Translation between db and python classes. Only python used 
 class Device(Base):
     __tablename__ = "device"
 
@@ -18,7 +19,7 @@ class Device(Base):
     firmware_version = Column(String(255), nullable=True)
     first_activation = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     last_seen =Column(DateTime(timezone=True), nullable=True)
-    metadata = Column(JSONB, nullable=True)
+    device_metadata = Column(JSONB, nullable=True)
 
     __table_args__ = (CheckConstraint("status IN ('active', 'inactive', 'decommissioned')", name='device_status_chk'),)
 
