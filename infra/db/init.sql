@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS device (
     firmware_version VARCHAR(50),
     first_activation TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen TIMESTAMPTZ,
-    metadata JSONB,
+    device_metadata JSONB,
     CONSTRAINT device_status_chk CHECK (status IN ('active', 'inactive', 'decommissioned'))
 );
 
