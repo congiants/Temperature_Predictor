@@ -8,3 +8,4 @@ pycache/
 .idea/
 .vscode/
 data/
+test_token.txt
