@@ -17,3 +17,13 @@ class ReadingResponse(BaseModel):
     ts: datetime | None = None;
 
 
+class DeviceCreate(BaseModel):
+    display_name:str
+    location:str | None = None
+    firmware_version:str | None = None
+
+class DeviceResponse(BaseModel):
+    device_id:UUID
+    token:str
+    display_name:str
+    status:str
