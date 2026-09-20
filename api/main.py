@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from datetime import datetime,timezone
 from database import get_db
 from models import DHT22, Device 
-from schemas import ReadingCreate, ReadingResponse
-from auth import verify_token
+from schemas import ReadingCreate, ReadingResponse, DeviceCreate, DeviceResponse, DeviceListItem
+from auth import verify_token, generate_token, hash_token
 
 app = FastAPI() #Object of FastAPI class
 
@@ -17,7 +17,7 @@ bearer_scheme = HTTPBearer() #Object of HTTPBearer class. Used for the token ver
 async def read_root():
     return {"message" : "Welcome to Temp Predictor API"}
 
-
+#Received new post about a new reading
 @app.post("/readings", response_model=ReadingResponse, status_code=201) #When device POSTs data in readings excecute function bellow and reply 201
 def create_reading(reading: ReadingCreate, db: Session= Depends(get_db), creds: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
 
@@ -40,3 +40,34 @@ def create_reading(reading: ReadingCreate, db: Session= Depends(get_db), creds: 
     db.refresh(dht22_readings)
 
     return dht22_readings
+
+#Received new post about a new device
+@app.post("/devices", response_model=DeviceResponse, status_code=201)
+def create_device(device: DeviceCreate, db: Session = Depends(get_db)):
+
+    raw_token = generate_token()
+    hashed = hash_token(raw_token)
+
+    new_device = Device(
+        display_name=device.display_name,
+        location=device.location,
+        firmware_version=device.firmware_version,
+        token_hash=hashed,
+    )
+
+    db.add(new_device)
+    db.commit()
+    db.refresh(new_device)
+
+    return DeviceResponse(
+        device_id=new_device.device_id,
+        token=raw_token,
+        display_name=new_device.display_name,
+        status=new_device.status,
+    )
+
+#In case someome asks from the DB to get all the devices
+@app.get("/devices", response_model=list[DeviceListItem], status_code=200)
+def get_devices_list( db: Session = Depends(get_db)):
+    devices = db.query(Device).all()
+    return devices

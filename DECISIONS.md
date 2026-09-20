@@ -196,3 +196,30 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
 - **Alternatives rejected:** Full geo support now (slows down Day 1 for a
   feature nothing consumes yet).
 - **Status:** ⏳ Deferred, revisit when the dashboard wants maps.
+
+## D-017 · POST /devices is unauthenticated for now — KNOWN DEBT (2026-09-19)
+
+- **Decision:** The registration endpoint requires no token (unlike every
+  other write endpoint). Anyone who can reach the API can register a device.
+- **Why:** Chicken-and-egg — a device comes to this endpoint to obtain its
+  first token, so it cannot be asked for one. Acceptable while the API runs
+  only on localhost. Explicitly logged as debt: before real deployment, add
+  an admin credential (e.g. a single admin API key) to this endpoint.
+- **Alternatives rejected:** Admin API key now (a second auth mechanism on
+  Day 1 slows learning; nothing is deployed yet), pre-shared registration
+  secret baked into firmware (worth revisiting at firmware time, Day 4).
+- **Status:** ✅ Decided; debt open until pre-deployment hardening.
+
+## D-018 · GET /readings v1: filterable via query parameters (2026-09-20)
+
+- **Decision:** GET /readings accepts optional query parameters `device_id`
+  (filter to one device) and `limit` (max rows, default 100, bounded),
+  returning newest-first. User chose option B.
+- **Why:** The Streamlit dashboard (its primary consumer) needs per-device
+  views; returning every reading unconditionally does not scale and wastes
+  bandwidth. Query params are the standard HTTP idiom for filtering reads.
+  Newest-first because dashboards care about "now" most.
+- **Alternatives rejected:** (A) No filters, fixed latest-100 (too rigid for
+  the dashboard within days), (C) full offset/cursor pagination with counts
+  (industrial-grade, premature at this data volume — revisit at hardening).
+- **Status:** ⏳ Being implemented.

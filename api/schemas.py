@@ -27,3 +27,10 @@ class DeviceResponse(BaseModel):
     token:str
     display_name:str
     status:str
+
+class DeviceListItem(BaseModel):
+    device_id:UUID
+    display_name:str | None = None
+    status:str
+    location:str | None = None
+    last_seen: datetime | None = None
