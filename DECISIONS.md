@@ -222,4 +222,21 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
 - **Alternatives rejected:** (A) No filters, fixed latest-100 (too rigid for
   the dashboard within days), (C) full offset/cursor pagination with counts
   (industrial-grade, premature at this data volume — revisit at hardening).
-- **Status:** ⏳ Being implemented.
+- **Status:** ✅ Implemented and tested 2026-09-20 (incl. empty-list for
+  unknown device, 422 on limit=0).
+
+## D-019 · Dashboard reads via the API, never the DB directly (2026-09-20)
+
+- **Decision:** The Streamlit dashboard consumes GET /devices and
+  GET /readings over HTTP, like any external client. User chose B.
+- **Why:** Keeps the API as the single door (consistent with D-013): DB
+  credentials stay in one service, response schemas guarantee secrets
+  (token_hash) can never reach the dashboard, schema changes are absorbed
+  in one place, and the dashboard exercises the API as its first real
+  consumer. Same principle that scales to microservices
+  (API-as-contract / no shared database).
+- **Alternatives rejected:** Direct PostgreSQL access from Streamlit
+  (second credential holder, bypasses schema filtering, couples two
+  services to the DB layout, requires exposing the DB on the network once
+  the dashboard moves off-machine).
+- **Status:** ✅ Decided; dashboard v1 being built.

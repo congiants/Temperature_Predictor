@@ -1,11 +1,12 @@
-from fastapi import FastAPI, Depends, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer 
 from sqlalchemy.orm import Session
 from datetime import datetime,timezone
 from database import get_db
 from models import DHT22, Device 
 from schemas import ReadingCreate, ReadingResponse, DeviceCreate, DeviceResponse, DeviceListItem
 from auth import verify_token, generate_token, hash_token
+from uuid import UUID
 
 app = FastAPI() #Object of FastAPI class
 
@@ -71,3 +72,13 @@ def create_device(device: DeviceCreate, db: Session = Depends(get_db)):
 def get_devices_list( db: Session = Depends(get_db)):
     devices = db.query(Device).all()
     return devices
+
+#In case I wanna see the readings
+@app.get("/readings", response_model=list[ReadingResponse], status_code = 200)
+def get_readings_list(device_id: UUID | None = None,  limit: int = Query(default=100, ge=1, le=1000), db: Session = Depends(get_db)):
+    readings = db.query(DHT22)
+    if device_id is not None:
+        readings = readings.filter(DHT22.device_id == device_id)
+    readings = readings.order_by(DHT22.ts.desc()).limit(limit).all()
+    return readings
+
