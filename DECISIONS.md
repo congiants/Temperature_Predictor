@@ -240,3 +240,58 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
   services to the DB layout, requires exposing the DB on the network once
   the dashboard moves off-machine).
 - **Status:** ✅ Decided; dashboard v1 being built.
+
+## D-020 · Aggregation runs in a separate worker service, not in the API (2026-09-22)
+
+- **Decision:** Daily min/max/avg aggregation (readings → dht22_aggregate)
+  lives in worker/, its own process, independent of the FastAPI service.
+- **Why:** (in the user's own words: it's "asxeto" — unrelated — and "needs
+  to work on its own either way.") (1) Separation of concerns: the API is
+  request-driven (milliseconds, always available for sensors); aggregation
+  is schedule-driven batch work. (2) Latency protection: batch jobs inside
+  the API process would block or slow ingestion. (3) Fault isolation both
+  ways: a crashing aggregator never stops ingestion; a down API never
+  stops aggregation. Also enables independent scaling later.
+- **Alternatives rejected:** Aggregation inside the API on a background
+  thread (couples failure modes, competes for the same CPU, complicates
+  deployment), aggregation at read-time on every dashboard request
+  (recomputes the same numbers endlessly, slow queries at scale).
+- **Status:** ✅ Decided; aggregator being built today (Day 2).
+
+## D-021 · Aggregator computes in SQL (GROUP BY), not pandas (2026-09-22)
+
+- **Decision:** The worker's daily min/max/avg aggregation is one SQL
+  GROUP BY query executed inside PostgreSQL; only finished summary rows
+  travel back (aggregation pushdown).
+- **Why:** The raw readings never leave the database — at scale
+  (~1,440 readings/device/day) pulling raw rows into Python to summarize
+  them is the truck-load-for-one-box waste already rejected in D-018's
+  limit design. Databases are purpose-built for aggregation. Also a
+  deliberate learning goal: GROUP BY is the heart of SQL.
+- **Alternatives rejected:** pandas groupby client-side (memory-bound,
+  network-heavy; the same idiom is being learned anyway on the ML side
+  with the CSV, so nothing is lost pedagogically).
+- **Status:** ⏳ Being implemented in worker/aggregator.py.
+
+## D-022 · Aggregation SQL lives in worker code, not a stored procedure (2026-09-22)
+
+- **Decision:** The GROUP BY query is a fixed SQL string in
+  worker/aggregator.py, executed via SQLAlchemy. (Raised by the user, who
+  proposed a DB-side function.)
+- **Why:** Logic in application code is version-controlled, diffable,
+  reviewable and deployed like everything else; DB-side functions are
+  state outside git that demands migration tooling to manage safely.
+  Aggregation pushdown is preserved either way — GROUP BY executes inside
+  PostgreSQL regardless of where the query text is stored. Only one
+  writer of aggregates exists (the worker), so a stored procedure's
+  centralization benefit has no consumer yet. Implemented 2026-09-22 as a
+  single INSERT..SELECT..ON CONFLICT DO UPDATE (idempotent upsert; data
+  never leaves the DB); worker/database.py holds engine setup only
+  (no sessionmaker/get_db — that machinery is FastAPI-specific).
+- **Alternatives rejected:** Stored procedure `aggregate_daily()` in
+  PostgreSQL — legitimate pattern; revisit if a second service ever needs
+  to trigger aggregation or if a dedicated migration workflow (Alembic)
+  is adopted. Also noted: sending fixed SQL is safe; SQL injection only
+  arises from gluing untrusted input into query text, which
+  parameterized queries prevent (SQLAlchemy parameterizes always).
+- **Status:** ✅ Decided.

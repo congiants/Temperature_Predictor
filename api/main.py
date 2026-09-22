@@ -34,10 +34,12 @@ def create_reading(reading: ReadingCreate, db: Session= Depends(get_db), creds: 
     if device.token_hash is None or verify_token(token, device.token_hash) is False:
          raise HTTPException(status_code=401, detail="Incorrect token.")
 
+    device.last_seen = datetime.now(timezone.utc)
+
     dht22_readings = DHT22(device_id=reading.device_id, temp_c=reading.temp_c, humidity = reading.humidity, ts=ts)
 
-    db.add(dht22_readings)
-    db.commit()
+    db.add(dht22_readings) #New object, to be added to the db
+    db.commit()#Commits the whole session worksapce: device updated last seen and the dht22 new readings
     db.refresh(dht22_readings)
 
     return dht22_readings
