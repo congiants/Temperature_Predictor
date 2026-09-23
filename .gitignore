@@ -1,11 +1,15 @@
 .env
 /secrets/db_password.txt
-pycache/
+__pycache__/
 *.pyc
 .DS_Store
 .venv/
 .pytest_cache/
 .idea/
 .vscode/
-data/
+data/*
+!data/thessaloniki_weather_raw.csv
+!data/thessaloniki_openmeteo_raw.csv
 test_token.txt
+secrets.h
+CLAUDE.md

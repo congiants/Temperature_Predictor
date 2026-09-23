@@ -5,11 +5,15 @@
 #include <DHT.h>
 #include <ESP8266HTTPClient.h>
 #include <WiFiClient.h>
+#include "secrets.h"
 
-const String URL = "Your_local_PC_IP:your_port/temperature_predictor/data_test.php";
+const String URL = API_URL;
+const char* ssid = WIFI_SSID;
+const char* password = WIFI_PASSWORD;
 
-const char* ssid = "Your_ssid";
-const char* password = "Your_wifi_password";
+IPAddress localIP(192, 168, 1, 250);   // the board's fixed address
+IPAddress gateway(192, 168, 1, 1);     // Default Gateway
+IPAddress subnet(255, 255, 255, 0);    // Subnet Mask
 
 #define DHT_SENSOR_PIN D7
 #define DHT_SENSOR_TYPE DHT22
@@ -31,6 +35,7 @@ void connectWifi(){
   Serial.println("WiFi connecting to ");
   Serial.println(ssid);
 
+  WiFi.config(localIP, gateway, subnet, gateway);
   WiFi.begin(ssid, password);
 
   Serial.print("Connecting");
@@ -40,7 +45,7 @@ void connectWifi(){
     delay(500);
     digitalWrite(LED_BUILTIN, HIGH);
     delay(500);
-    Serial.print(".");
+    Serial.print(WiFi.status());
   }
   Serial.println();
   Serial.println("WiFi connected!");
@@ -65,18 +70,21 @@ void loop() {
     Serial.println("DHT error");
   }
   else{
-    String postData = "temperature="+String(tempC) + "&humidity="+String(humi);
+    String postData = "{\"device_id\":\"" + String(DEVICE_ID) + "\""
+                + ",\"temp_c\":" + String(tempC)
+                 + ",\"humidity\":" + String(humi)
+                + "}";
 
     HTTPClient http;
     WiFiClient wifiClient;
 
     http.begin(wifiClient, URL);
-
-    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", "Bearer " + String(DEVICE_TOKEN ));
 
     int httpCode = http.POST(postData);
-
     String payload = http.getString();
+    http.end();
 
     Serial.println("----------------");
     Serial.println("DHT22:");
@@ -95,6 +103,5 @@ void loop() {
     Serial.println(payload);
 
   }
-  delay(500);
-  ESP.deepSleep(2e6);
+  delay(60000);
 }

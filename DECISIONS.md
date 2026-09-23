@@ -295,3 +295,329 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
   arises from gluing untrusted input into query text, which
   parameterized queries prevent (SQLAlchemy parameterizes always).
 - **Status:** ✅ Decided.
+
+## D-023 · Data storage policy: raw dataset committed, derived data ignored (2026-09-22)
+
+- **Decision:** The raw NOAA file `data/thessaloniki_weather_raw.csv` is
+  immutable ("raw is sacred": never edited or overwritten) and is committed
+  to git. The cleaning step writes a derived snapshot
+  `data/thessaloniki_weather_clean.csv` that stays gitignored, as do future
+  model files (`*.joblib`). Before/after cleaning statistics (row counts,
+  missing cells per column, duplicates removed, date gaps) are recorded in
+  the cleaning decision entry as evidence. `.gitignore` changes from
+  `data/` to `data/*` + `!data/thessaloniki_weather_raw.csv` (git cannot
+  re-include a file inside an ignored directory, so the contents are
+  ignored rather than the directory).
+- **Why:** Four-question test for "belongs in git": small (2.3 MB), text
+  (git diffs it efficiently), shareable (NOAA GHCN is public domain), and
+  NOT regenerable from the repo (a re-download may differ because NOAA
+  revises data). Committing the raw input makes the repo clone-and-run
+  reproducible and pins the exact training input for the report. The clean
+  file and models fail question four: the code rebuilds them, so committing
+  them creates churn on every run and a "two truths" ambiguity. The story
+  for the report is told by the cleaning code (in git) plus the before/after
+  numbers, not by the clean file itself. Raised by the user, who asked
+  whether to save intermediate data and whether to stop ignoring `data/`.
+- **Alternatives rejected:** (A) keep all of `data/` ignored: reader must
+  source the CSV themselves, weaker reproducibility. (C) commit raw AND
+  clean: derived-artifact churn, two sources of truth. (D) Git LFS: right
+  tool for files of hundreds of MB, overkill at 2.3 MB. DVC (data version
+  control) deferred to hardening.
+- **Status:** ✅ Decided. Implementation: user edits `.gitignore` and
+  commits the raw CSV.
+
+## D-024 · Explore in notebooks, productionize in scripts (2026-09-22)
+
+- **Decision:** ML exploration (ML-1 inspect, ML-2 cleaning experiments,
+  feature/baseline trials) happens in Jupyter notebooks under a top-level
+  `notebooks/` directory (`tinkering_data.ipynb`; the two legacy notebooks
+  moved there from `api/` as reference). Proven cells are ported, step by
+  step, into `worker/ml_trainer.py`, which is the single source of truth
+  for the raw → clean → features → train → save-model pipeline. Notebooks
+  are disposable; the script must run top-to-bottom from a blank process.
+  Habits adopted: "Restart Kernel → Run All" before trusting a notebook
+  result; "Clear All Outputs" before committing a notebook. Proposed by
+  the user.
+- **Why:** Notebooks keep the dataset in memory between cells and show
+  tables/plots inline, the ideal feedback loop for tinkering. But cells
+  run in click order and the kernel retains every variable ever created
+  (hidden state), so a notebook can "work" only thanks to a cell that was
+  since edited or deleted; a script has no such trap. `.ipynb` files also
+  embed outputs (the legacy notebooks are 3.1 MB and 0.8 MB, mostly
+  outputs), which bloats git and makes diffs unreadable. Notebooks belong
+  to no service, hence their own directory rather than `api/`.
+- **Alternatives rejected:** Scratch script `worker/explore.py` (Claude's
+  first suggestion): safe but slow feedback loop, re-reads the CSV on
+  every run. REPL: nothing saved. Notebook as the production artifact
+  (papermill/nbconvert): hidden-state risk in production; unnecessary.
+  Automated output stripping (nbstripout) deferred to hardening.
+- **Status:** ✅ Decided. Legacy `api/temp_predictor.py` moved to
+  `worker/temp_predictor.py` as the porting reference.
+
+## D-025 · Training data source: Open-Meteo ERA5-Land reanalysis replaces NOAA GHCN (2026-09-22)
+
+- **Decision:** The ML model trains on daily reanalysis data from the
+  Open-Meteo Historical Weather API (archive-api.open-meteo.com), model
+  ERA5-Land (~9 km grid, one consistent model 1950→present), for
+  Thessaloniki city centre (lat 40.64, lon 22.94), timezone auto
+  (Europe/Athens), 1950-01-01 → ~one week before download. Variables:
+  temperature_2m_{mean,max,min}, relative_humidity_2m_{mean,max,min}.
+  Saved as `data/thessaloniki_openmeteo_raw.csv` (immutable, committed per
+  D-023). The NOAA file `data/thessaloniki_weather_raw.csv` is kept for a
+  later validation: mean absolute difference between reanalysis and the
+  station thermometer on the ~14,000 days NOAA actually measured TMAX
+  (optionally with a second small download at the airport coordinates
+  40.52/22.971 so the comparison is same-cell).
+- **Why:** ML-1 inspection of the NOAA GHCN file (21,211 rows, 1964→2025)
+  showed the two TARGET columns are the holiest: TMAX 6,894 missing
+  (32.5%), TMIN 8,787 missing (41.4%), TAVG 0 missing (flag `H` = derived
+  from hourly reports, a different pipeline). Holes are NOT concentrated
+  in the early era; they GROW over time: 2013 has 295/365 TMAX missing,
+  2014 has 355/365, 2015–2025 run 50–60% missing. Plus two whole years
+  absent (1972, 2005) and sparse rows 1964–1974. No duplicate dates, no
+  9999 sentinels, plausible ranges (TMAX max 44.0, TMIN min −12.8). Every
+  in-place cure fails: dropping NaN rows discards half the modern era;
+  forward-fill (the v1 approach) turns 40% of targets into stale copies,
+  which also inflated v1's measured accuracy (~1 °C day-1, ±3 °C day-7,
+  partly on copied targets); interpolation is fiction across 2014.
+  Better data beats cleverer cleaning. Reanalysis is gap-free by
+  construction. City centre (not the airport) because the model should
+  mimic the sensor's location (D-026). 1950 rather than 1964: download the
+  maximum, slice in code; pre-1979 reanalysis is fuzzier (few
+  observations assimilated) and the climate has warmed ~1–1.5 °C, so
+  climatology features should use a recent window (e.g. WMO normal
+  1991–2020) — a feature-step decision. ERA5-Land chosen over "Best match"
+  (stitches models, discontinuity at 2017) and over ERA5 from 1940
+  (coarser 25 km grid for ten fuzzy years).
+- **Alternatives rejected:** (A) keep NOAA, interpolate + drop 2013–2014:
+  too many invented values. (B) impute TMAX/TMIN from complete TAVG:
+  training targets would themselves be model outputs (error stacking).
+  (C) switch target to TAVG: changes the project's promise. NOAA GSOD
+  (daily values derived from hourly airport reports, real measurements,
+  likely complete): kept as the upgrade path if the report wants station
+  data; costs °F conversion, 9999.9 sentinels, yearly files. Meteostat:
+  silently fills gaps from model data. Greek sources (HNMS, meteo.gr):
+  access by request, too slow. Trade-off accepted: reanalysis is modelled
+  on a grid, not a thermometer; extremes slightly smoothed; coastal city
+  centre maps to the nearest ERA5-Land land cell.
+- **Status:** ✅ Decided. Download pending. Cleaning decision
+  (drop/interpolate) is now expected to be trivial; verify with the same
+  ML-1 checks on the new file.
+- **Note (2026-09-22, after download):** ERA5-Land snapped the requested
+  40.64/22.94 to grid-cell centre 40.70/22.90 (elevation 32 m, ~7 km NNW,
+  inland). File: 28,017 daily rows 1950-01-01 → 2026-09-15, one per
+  calendar day (gap-free confirmed). Three metadata lines precede the
+  header (`skiprows=3`). Row 1 has NaN mean temp/humidity (no full first
+  day). Column names carry units, e.g. `temperature_2m_max (°C)`.
+
+## D-026 · Inference inputs are the sensor's daily aggregates; training features restricted to sensor-observable variables (2026-09-22)
+
+- **Decision:** On prediction day the model is fed rows from
+  `dht22_aggregate` (temp max/min/avg, humidity max/min/avg per day) plus
+  calendar features derived from the date. Therefore the training data
+  (D-025) carries only those same variables; precipitation, weather code
+  and apparent temperature were deliberately NOT downloaded. Rule:
+  training features ⊆ sensor columns (a subset is fine; the model must
+  never need something the sensor cannot provide). Raised by the user
+  ("we don't need precipitation, the DHT sensor only gets temp and
+  humidity").
+- **Why:** Feature availability at inference time / train–serve skew: a
+  model trained on an input that is unavailable when predicting cannot be
+  served. Path 2 keeps the system coherent (sensor → aggregate → model →
+  prediction → dashboard) instead of making the sensor decorative. The
+  historical reanalysis acts as a stand-in for the sensor's non-existent
+  multi-decade history. Known caveat, logged not solved: domain shift
+  between a balcony DHT22 and a 9 km reanalysis cell (sensor in sun reads
+  hot); mitigation planned once months of sensor data exist: compare on
+  overlapping days and correct the offset (or recalibrate).
+- **Alternatives rejected:** Path 1: predictor fetches recent city weather
+  from Open-Meteo at inference time (precipitation could stay; sensor
+  becomes dashboard-only; hollow IoT story). Keeping precipitation as a
+  feature: weak signal for temperature anyway, most information is in
+  recent temperatures and day-of-year.
+- **Status:** ✅ Decided.
+
+## D-027 · Deadline re-plan: firmware first (timeboxed), scope cut for Sunday 2026-09-27 (2026-09-23)
+
+- **Decision:** The project is presented finished on Sunday 2026-09-27,
+  and the 2,500-word report is due the same day. New build order:
+  Wed 09-23 firmware (FW-1..FW-7) → Thu 09-24 ML block (ML-1..ML-7 in one
+  session) → Fri 09-25 predictions (`worker/predictor.py`,
+  `GET /predictions`, dashboard v2) → Sat 09-26 buffer + demo rehearsal.
+  The report is written in parallel (outline + related work Thu,
+  architecture + design decisions Fri, finish Sat). Firmware is
+  TIMEBOXED: if readings are not flowing by Thursday 12:00, switch to
+  plan B, a Python simulator script that POSTs realistic readings to the
+  API, and move on to ML. Cut from scope and moved to the report's
+  "Future work": Docker for api/worker/dashboard, nginx + TLS,
+  duplicate/idempotent ingestion, automatic scheduler (scripts run by
+  hand for the demo), NOAA-vs-reanalysis validation, LightGBM comparison,
+  dashboard polish. Pace: full teaching mode is kept everywhere (user's
+  choice), protected by strict scope and the timebox. The pending
+  cleaning decision (previously "D-027 pending") becomes D-028.
+- **Why:** Risk-first scheduling. Hardware is the only component whose
+  failures can lie outside the user's control (dead board, charge-only
+  cable, USB driver, Windows firewall, WiFi), and a broken part needs a
+  shop: surprises must surface on Wednesday, not Saturday. The sensor
+  accumulates real data while everything else is being built, so every
+  extra day of readings improves the demo; the v1 feature set uses a
+  30-day rolling mean, so inference will need a cold-start plan anyway
+  (a Friday decision), and more real days make it easier. Working
+  firmware completes the first end-to-end slice (sensor → API → DB →
+  aggregates → dashboard), a presentable safety net if ML runs late. ML
+  is the lower-risk half: pure software, gap-free data already downloaded
+  (D-025), model trained before in v1. ML still must not slip past
+  Friday: it is the "Predictor" in the project's name. Full teaching is
+  kept because the user values understanding over speed and must defend
+  every part in the presentation Q&A. Raised by the user ("should we
+  first create the firmware, test it, and have something presentable").
+- **Alternatives rejected:** (B) ML first, firmware Friday: hardware
+  surprises found late, only ~1–2 days of real sensor data by Sunday.
+  (C) Simulator only, no hardware: safest, but hollows out the IoT half
+  of the story (the sensor → model path of D-026). "Deadline mode"
+  (Claude shows firmware/plumbing/dashboard code, user explains it back):
+  faster, declined by the user in favour of full teaching. The original
+  4-day plan (aggregator + ML, then predictions + dashboard v2, firmware
+  LAST) put the riskiest component at the end.
+- **Status:** ✅ Decided. Hardware in hand: ESP8266 (NodeMCU), DHT22 +
+  jumper wires, USB data cable. Arduino IDE not yet installed on this
+  laptop (FW-1).
+
+## D-028 · Firmware v2: adapt the 2024 sketch, secrets in a gitignored header, new device, 60 s deep-sleep cycle (2026-09-23)
+
+- **Decision:** The FastAPI-era firmware is the 2024 sketch
+  `firmware/esp8266/esp8266.ino` adjusted in place, not rewritten, and
+  the planned sensor-only test sketch is skipped (user's call: "lets just
+  adjust old firmware"). Changes: every per-installation value (WiFi SSID
+  and password, API URL, device_id, device token) moves to
+  `firmware/esp8266/secrets.h`, pulled in with `#include "secrets.h"` and
+  gitignored. The POST body becomes JSON
+  `{"device_id", "temp_c", "humidity"}` (the ReadingCreate contract; `ts`
+  is left to the server per D-006), built by String concatenation.
+  Headers: `Content-Type: application/json` and
+  `Authorization: Bearer <token>` (D-007). `http.end()` before sleeping.
+  Cadence: one reading every 60 s via deep sleep (`ESP.deepSleep` counts
+  microseconds) with the D0→RST wake wire, which is unplugged for every
+  upload. The real sensor is registered as a NEW device via POST /devices.
+- **Why:** The old sketch already holds WiFi-connect and DHT22-read code
+  that worked in 2024, and it prints the sensor values to Serial before
+  any network activity, so most of the test sketch's isolation benefit
+  is kept. secrets.h: the repo is on GitHub and git never forgets (a
+  deleted file stays in history, as the recovered 2024 wiring photo
+  showed), so the WiFi password and device token must never be
+  committed; this applies the "never hardcode secrets" principle. 60 s
+  gives ~1,440 readings/day, the volume the aggregator was designed
+  around (D-021), and a visible update every minute in the demo. Deep
+  sleep (user's choice over the recommended always-awake `delay()`):
+  battery-ready if the sensor ever runs off-grid outdoors, continuity
+  with the 2024 design, and every cycle starts from a clean reboot so no
+  state accumulates. Accepted costs: WiFi reconnects on every wake
+  (effective interval ≈ 60 s + a few seconds), one line of boot noise per
+  cycle in the Serial Monitor (the 74880-baud ROM message), and the
+  D0→RST wire must be removed for uploads. New device: keeps real data
+  separate from test rows (duplicate POSTs, the −80/100 boundary test)
+  in charts, aggregates and ML inputs.
+- **Alternatives rejected:** Separate sensor-only test sketch first (more
+  isolation, slower). Always-awake loop with `delay(60000)` (simpler on
+  USB power; recommended, not chosen). 10 s interval (six times the rows
+  daily aggregates need) and 5 min (demo chart barely moves). Reusing
+  test device test-3 (real and test data mixed). Secrets hardcoded in the
+  .ino (would leak to GitHub). ArduinoJson library (overkill for three
+  fields; revisit if the payload grows). WiFiManager captive portal or
+  flash-stored config (overkill for one device).
+- **Status:** ✅ Decided. Implementation in progress (FW-3..FW-5).
+  Deep-sleep clause superseded by D-029 (stay awake on USB power).
+
+## D-029 · v1 firmware stays awake on USB power; deep sleep deferred to a battery version (2026-09-23)
+
+- **Decision:** Reverses the deep-sleep clause of D-028. This first
+  firmware version targets a mains-powered (USB) sensor, e.g. on a
+  balcony: the board stays awake and waits between readings with
+  `delay()` (60 s, unchanged). `ESP.deepSleep` is removed and the D0→RST
+  wake wire is no longer used. Deep sleep returns in a later
+  wireless/battery version (report: Future work). Raised by the user.
+- **Why:** Deep sleep only pays off on batteries. On USB power it brings
+  costs and no benefit: the D0→RST wire (unplugged for every upload), a
+  WiFi reconnect of a few seconds every cycle, boot noise in the Serial
+  Monitor every minute, and an interval that drifts to ~63–65 s. Staying
+  awake keeps WiFi connected, gives the loop's reconnect check a real
+  job, and keeps an exact 60 s cadence. Principle: design for the
+  deployment you actually have, and version the firmware when the
+  deployment changes. Consequence: the chip now runs for days without
+  rebooting, so resources must be released every cycle (`http.end()`);
+  deep sleep's reboot used to hide that.
+- **Alternatives rejected:** Keep deep sleep (D-028 as first decided).
+- **Status:** ✅ Decided. Supersedes the deep-sleep clause of D-028.
+
+## D-030 · ESP8266 uses a static IP instead of DHCP (2026-09-23)
+
+- **Decision:** Before joining WiFi, the firmware sets a fixed address
+  for itself with `WiFi.config(ip, gateway, subnet, dns)`: an unused
+  address high in the home subnet, the router as gateway and DNS, and
+  the subnet mask read from the PC's `ipconfig`. The concrete values live
+  only in the firmware, never in documentation. The WiFi 6 compatibility
+  lines `WiFi.mode(WIFI_STA)` + `WiFi.setPhyMode(WIFI_PHY_MODE_11G)` were
+  suggested but turned out unnecessary: the static IP alone got the first
+  request through (uvicorn logged the board's POST /readings → 422,
+  expected with the placeholder device id). Kept in reserve if -1 errors
+  reappear.
+- **Why:** On the home WiFi 6 (802.11ax) router, the ESP8266 (2014,
+  b/g/n only) sat on status 7 (connecting) for minutes, and when it
+  finally reported "connected" it held a 169.254.x.x address, the
+  link-local fallback a device gives itself when the router's DHCP never
+  answers. With such an address the board is on the WiFi but cannot
+  reach the PC (httpCode -1). A static IP skips DHCP entirely and also
+  makes each connect faster. Ruled out before deciding: a password typo
+  (secrets.h compared byte-for-byte with the phone's saved network), WPA3
+  (the router reports WPA/WPA2-Personal), and hidden characters in
+  secrets.h. The chosen address was verified free with `ping`
+  (destination host unreachable).
+- **Alternatives rejected:** DHCP reservation in the router (the proper
+  fix, but useless while DHCP itself doesn't answer the board); debugging
+  router settings or firmware (hours, not this week). Known risk: the
+  router could lease the same address to another device someday;
+  mitigated by picking a high address. Related fragility: the PC's own
+  address (in API_URL) comes from DHCP and could change after a router
+  reboot; a reservation for the PC is Future work.
+- **Status:** ✅ Decided and verified 2026-09-23 ~23:55 (the board reached
+  the API).
+
+## D-031 · Going public: private notes excluded, author emails normalized, history rewritten once (2026-09-24)
+
+- **Decision:** Before the repository is made public: (1) `CLAUDE.md`,
+  the private mentoring / working-notes file, is untracked, gitignored
+  (and also listed in the local-only `.git/info/exclude` as a safety
+  net), and removed from every past commit with `git filter-repo`;
+  (2) every commit's author and committer email is rewritten to the
+  GitHub no-reply address (via a mailmap), and the repo-local git config
+  uses that address from now on; (3) the rewritten history is
+  force-pushed once, while the repo is still private and has a single
+  user. A full backup (git bundle of all refs + an archive of the working
+  folder) was taken first. The README credits the data sources
+  (Open-Meteo CC BY 4.0, Copernicus ERA5-Land, NOAA GHCN-Daily), and
+  `firmware/esp8266/secrets.example.h` documents which values the
+  gitignored `secrets.h` must hold. Mentions of Claude (the AI mentor)
+  in this log are kept on purpose: they record the working mode, in
+  which the user writes and runs the code while Claude explains,
+  reviews, and supplies short snippets for specific fixes (D-027 records
+  that a faster mode, with Claude supplying ready-made code, was
+  declined).
+- **Why:** A public repo exposes its entire history, not only the latest
+  files: deleting a file in a new commit leaves it readable in the old
+  ones. CLAUDE.md holds personal learning notes that are not project
+  documentation, and a personal email address in commit metadata gets
+  harvested. The pre-publication audit found no credentials in code or
+  history (secrets are read from env vars / a gitignored header; the one
+  `.env` ever committed held placeholder values; old sketches and PHP
+  files contain placeholders only). Rewriting history is only safe
+  before anyone else has cloned; that window closes the moment the repo
+  goes public. Open-Meteo data is licensed CC BY 4.0, so publishing the
+  CSV requires attribution.
+- **Alternatives rejected:** (B) publish CLAUDE.md as is (transparent
+  about AI-assisted learning, but exposes personal notes). (C) strip the
+  notes from the current version only (old versions remain in history).
+  Restarting from a single fresh commit (would erase the 2023→2026
+  project timeline the report can cite). Removing every mention of the
+  AI mentor from this log (done briefly, then reverted at the user's
+  request: the mentions document how the work was done).
+- **Status:** ✅ Decided and executed 2026-09-24.
