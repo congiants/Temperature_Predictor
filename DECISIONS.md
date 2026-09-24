@@ -621,3 +621,142 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
   AI mentor from this log (done briefly, then reverted at the user's
   request: the mentions document how the work was done).
 - **Status:** ✅ Decided and executed 2026-09-24.
+
+## D-032 · ML-2 cleaning: drop the one incomplete day; column names mirror the sensor table (2026-09-24)
+
+- **Decision:** Cleaning of `data/thessaloniki_openmeteo_raw.csv` is three
+  steps: (1) rename the columns to exactly the names of
+  `dht22_aggregate` (`time → date`, `temperature_2m_{max,min,mean} →
+  temp_c_{max,min,avg}`, `relative_humidity_2m_{max,min,mean} →
+  humidity_{max,min,avg}`); (2) `dropna()` to remove rows with any
+  missing value; (3) make `date` the index (a time series). No
+  interpolation, no filling.
+- **Evidence (before → after):** 28,017 rows → 28,016 rows. Missing
+  cells: 2 → 0, both on 1950-01-01 (the mean temperature and mean
+  humidity of the first day, which the source cannot compute because the
+  record starts that day). Duplicate dates: 0. Every year has 365/366
+  days (2026: 258 days, 1 Jan → 15 Sep, the download cut-off). Ranges
+  are physically plausible: temperature −16.1 to 43.7 °C, daily mean
+  humidity 28–98 %.
+- **Why:** With one incomplete day at the very start of a 76-year series,
+  dropping is lossless in practice and invents nothing; the cleaning
+  problem that forced D-025 (32–41 % missing targets in the NOAA file)
+  does not exist in reanalysis data. `dropna()` rather than deleting
+  "row 0" by position stays correct if a re-download also ends with an
+  incomplete last day. Identical names in training data and in the
+  sensor's aggregate table let the predictor feed sensor rows to the
+  model without a renaming step, removing a whole class of train–serve
+  mismatch bugs (D-026).
+- **Alternatives rejected:** Interpolating the two cells (no value in
+  inventing data for one day in 28,000). Keeping the long source names
+  (units and a `°` inside names, error-prone to type). Short custom names
+  (`temp_max`, …; the user's first version): would require a
+  translation step at inference.
+- **Status:** ✅ Decided 2026-09-24 (user chose to match the sensor
+  names). Implemented in `notebooks/tinkering_data.ipynb`; to be ported
+  to `worker/ml_trainer.py` (D-024).
+
+## D-033 · Training window: the satellite era, 1979 onward (2026-09-24)
+
+- **Decision:** The model learns from days dated 1979-01-01 onward
+  (about 17,400 rows up to the 2026-09-15 download cut-off). The full
+  1950–2026 table stays intact during feature engineering (ML-3). The
+  window is applied only at the train/test split (ML-4), e.g.
+  `weather.loc["1979":]`, so lag and rolling features for early January
+  1979 can still look back into December 1978.
+- **Why:** A reanalysis is only as good as the observations fed into it.
+  From 1979 onward, satellite observations enter ERA5, so the earlier
+  decades rest more on the model and less on measurement. The region has
+  also warmed by roughly 1–1.5 °C since 1950; the oldest decades would
+  pull the model's idea of "normal" toward a colder past. About 17,400
+  daily rows is far more than a Ridge model with around 20 inputs needs,
+  so dropping 1950–1978 costs little.
+- **Alternatives rejected:** (B) 1991 onward, matching the WMO 1991–2020
+  climate normal: closest to today's climate, about 13,000 rows; a
+  defensible choice, kept as a comparison. (C) Every year from 1950
+  (28,016 rows): the most data, but it mixes the less-constrained
+  pre-satellite era and a colder climate into training.
+- **Status:** ✅ Decided 2026-09-24 (user took the recommendation, A).
+  Treated as a hypothesis: in ML-6 the model can be re-fitted on B and C
+  and scored on the same test period; if another window wins clearly, a
+  new entry supersedes this one.
+
+## D-034 · Targets: temperature max and min for days 1–7; humidity is an input only (2026-09-24)
+
+- **Decision:** The model predicts 14 numbers per evening: `temp_c_max`
+  and `temp_c_min` for each of the next 7 days (columns
+  `target1_max … target7_max` and `target1_min … target7_min`, built with
+  `shift(-n)`). Humidity (max/min/avg) is used only as an input feature.
+- **Why:** This matches the project goal and v1, so the report can compare
+  against v1's benchmark. It keeps the serving work small (14 numbers in
+  the API response, two forecast lines on the dashboard). Relative
+  humidity is harder to forecast from these inputs: it largely mirrors
+  temperature and depends on rain and wind, which are deliberately not in
+  the dataset (D-026). The DHT22 is also less accurate and less stable on
+  humidity than on temperature, and the gap between a balcony and a 9 km
+  grid cell is larger for humidity.
+- **Alternatives rejected:** (B) Also predict humidity max/min (28
+  targets): a fuller demo, but it doubles the evaluation, API and
+  dashboard work for a weaker forecast. Kept as a stretch goal / Future
+  work; adding it is two lines in the target step.
+- **Status:** ✅ Decided 2026-09-24 (the user wrote temperature-only
+  targets in the notebook, i.e. option A).
+
+## D-035 · Model selection by time-series cross-validation; the test set stays sealed (2026-09-24)
+
+- **Decision:** The **test** set is 2022 → end of data and is used once,
+  at the end, to report the final score (same test period as v1, so the
+  report comparison stays fair). The **development** data, 1979–2021, is
+  used to compare feature sets and settings with time-series
+  cross-validation: scikit-learn `TimeSeriesSplit`, 5 folds, expanding
+  window (each fold trains on all earlier years and validates on the next
+  block), with `gap=7` rows between each training block and its
+  validation block. A feature set's score is its MAE per horizon
+  (day 1–7), averaged over the 5 folds; the spread across folds is noted
+  too. Never shuffled.
+- **Why:** A single validation period gives one score that can be the
+  luck of those particular years (one hot summer, one mild winter).
+  Averaging over five successive periods gives a steadier comparison and
+  shows how much the score varies. The expanding window respects time:
+  the model is never judged on days earlier than the days it learned
+  from. `gap=7` because the targets reach 7 days ahead: without it, the
+  targets of the last training rows would fall inside the validation
+  block. Keeping the test set sealed avoids "overfitting to the test
+  set", which would make the final number optimistic. Ridge trains in
+  milliseconds, so five fits per experiment cost nothing.
+- **Alternatives rejected:** (A) One validation slice, 2016–2021:
+  simpler, but a comparison based on a single period is noisier. (B)
+  Keep the two-way v1 split and compare feature sets on the test set:
+  optimistic final number.
+- **Open (decided in ML-6):** whether the chosen model is refitted on all
+  development data before the single test run, and whether the deployed
+  model is refitted on all data.
+- **Status:** ✅ Decided 2026-09-24 (user chose C over the recommended A).
+
+## D-036 · Predictions are stored in the database, not computed on demand (2026-09-24)
+
+- **Decision:** `worker/predictor.py` runs once a day after the
+  aggregator. It computes each device's 7-day forecast from that device's
+  daily aggregates and upserts it into a new `prediction` table
+  (`ON CONFLICT DO UPDATE`, the same pattern as the aggregator, D-021/
+  D-022). `GET /predictions` only reads that table. The table's exact
+  shape is decided when it is built.
+- **Why:** The model's inputs change once per day, so the forecast is the
+  same all day; computing it on every request repeats identical work.
+  Stored forecasts keep a history, which allows comparing what was
+  predicted with what the sensor later measured: a real-world evaluation
+  for the report and the demo. Roles stay clean: the worker does ML and
+  writes to the database; the API only serves data (in the spirit of
+  D-019) and needs no scikit-learn, no model file and no feature code
+  from `worker/`.
+- **Known caveat:** a stored forecast goes stale if the predictor is not
+  run, and there is no automatic scheduler for the demo (D-027). The
+  dashboard shows the date the forecast was issued.
+- **Alternatives rejected:** (B) On demand inside the API: always fresh
+  and no new table, but no forecast history, and the API would depend on
+  ML libraries, the model file and the worker's feature code. (C) Hybrid,
+  computing on demand and caching: the complexity of both, with no
+  benefit at this scale.
+- **Status:** ✅ Decided 2026-09-24 (user accepted the recommendation,
+  A). Closes the "store vs on-demand" question open since Day 1. Built on
+  Day 3 (Friday).
