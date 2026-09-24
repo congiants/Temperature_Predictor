@@ -760,3 +760,92 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
 - **Status:** ✅ Decided 2026-09-24 (user accepted the recommendation,
   A). Closes the "store vs on-demand" question open since Day 1. Built on
   Day 3 (Friday).
+
+## D-037 · Feature selection: automated forward selection, scored by the time-series CV (2026-09-24)
+
+- **Decision:** The goal is the most accurate model. The user writes a
+  list of candidate features, and scikit-learn's
+  `SequentialFeatureSelector` picks the subset: `direction="forward"`,
+  `cv` = the D-035 `TimeSeriesSplit` (5 folds, `gap=7`),
+  `scoring="neg_mean_absolute_error"` (MAE averaged over the 7 horizons
+  of the multi-output Ridge), `n_features_to_select="auto"` with
+  `tol=0.01` (stop when the next feature improves the average MAE by less
+  than 0.01 °C). It runs separately for the max targets and the min
+  targets, on the development data (1979–2021) only.
+- **Rules for candidates (correctness, not preference):** built only from
+  the sensor's columns (temperature and humidity max/min/avg) and the
+  date (D-026); backward-looking only (`shift(+n)`, `rolling`), never
+  future information.
+- **Why:** Automatic and reproducible, and it removes personal bias from
+  the choice. Forward selection is a standard, explainable method. The
+  `tol` stop rule keeps the model small and avoids adding features that
+  help only by chance.
+- **Alternatives rejected:** (B) Manual, one feature at a time: best for
+  learning, but slower and open to bias. (C) Every combination: over a
+  million subsets for 20 candidates; slow, and the winner would be mostly
+  luck.
+- **Known caveats:** The selector tries many subsets, so its best CV
+  score is optimistic; the reported score comes only from the sealed test
+  set (D-035). The selector returns the final set, not the order in which
+  features were added.
+- **Status:** ✅ Decided 2026-09-24 (user chose A).
+
+## D-038 · Ship the v1-recipe model now; serving first, improve later (2026-09-24)
+
+- **Decision:** The model we have is the one we serve: 14 Ridge models
+  (`alpha=0.1`), 7 for the max targets and 7 for the min targets. All 14
+  use the same 4 v1 predictors: `temp_c_max`, `temp_c_min`,
+  `avg_max_month`, `daily_avg_offset_max`. The user's notebook marks this
+  set "#Best results" for min as well. They are trained on Open-Meteo
+  from 1979 onward and saved with `joblib` to `models/ridge_v1.joblib`,
+  one dictionary holding the models (day order 1–7) and their predictor
+  lists. The file is a derived artifact and is not committed. Work moves
+  straight to serving: the `prediction` table, `worker/predictor.py`,
+  `GET /predictions` and dashboard v2.
+  Model improvements come after the full pipeline works end to end.
+- **Why:** The deadline is Sunday 2026-09-27. A working end-to-end system
+  (sensor → API → aggregate → prediction → dashboard) is worth more for
+  the demo than a better model with no way to serve it. The v1 recipe
+  already gives MAE ~1.6 °C (day 1) to ~2.9 °C (day 7) for max
+  temperature.
+- **Split used:** train 1979-01-01 → 2024-12-31, test 2025-01-01 onward,
+  the same for max and min. The user moved the split in the notebook, so
+  it replaces D-035's 2022+ test period.
+- **Supersedes / defers:** D-037 (forward feature selection) and the
+  cross-validation model selection in D-035 are deferred to "if time
+  allows" or the report's Future work. D-033 (1979 window) and D-034
+  (targets) still hold.
+- **Alternatives rejected:** Finishing the 5-step road to the best model
+  first (feature search, alpha tuning), which would push serving into
+  Saturday's buffer.
+- **Status:** ✅ Decided 2026-09-24 (user).
+
+## D-039 · The `prediction` table: one row per device, issue day and target day (2026-09-24)
+
+- **Decision:** A new table `prediction` in "long" format. Each predictor
+  run writes 7 rows per device, one per forecast day. Columns:
+  `device_id` (UUID, FK to `device`, `ON UPDATE CASCADE` / `ON DELETE
+  RESTRICT` like the other tables), `issued_date` (DATE, the day of the
+  data the forecast was made from), `target_date` (DATE, the day being
+  forecast), `temp_c_max` and `temp_c_min` (NUMERIC(5,2), the predicted
+  values, named like the `dht22_aggregate` columns), `model`
+  (e.g. `ridge_v1`) and `created_at` (TIMESTAMPTZ, default `NOW()`).
+  Primary key = (`device_id`, `issued_date`, `target_date`). CHECKs:
+  `target_date > issued_date`, and both temperatures above −100 and below 80
+  (the sensor table uses −80..80). No extra index: the primary key's index already serves
+  "latest forecast for this device".
+- **Why:** One row per forecast day is the standard layout for forecast
+  data. The dashboard plots `target_date` directly. Joining `target_date`
+  to `dht22_aggregate.date` compares each forecast with what the sensor
+  later measured, which is the real-world evaluation promised in D-036.
+  The primary key is the upsert key: re-running the predictor on the same
+  day overwrites its 7 rows instead of duplicating them (the pattern from
+  D-021/D-022). `model` shows which model made which forecast
+  once v2 exists. The CHECKs are defense in depth: an off-by-one date
+  bug or an absurd prediction fails loudly instead of being stored.
+- **Alternatives rejected:** (B) One row per run with 14 columns
+  (`max_d1` … `min_d7`): one INSERT per run, but charting and comparing
+  with actual values means unpacking 14 columns, and changing the number
+  of forecast days means changing the table.
+- **Status:** ✅ Decided 2026-09-24. The user accepted the recommendation
+  (A): "prediction sounds good".

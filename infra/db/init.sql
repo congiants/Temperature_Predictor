@@ -62,3 +62,24 @@ CREATE TABLE IF NOT EXISTS dht22_aggregate(
 );
 
 CREATE INDEX idx_dht22_aggregate_date ON dht22_aggregate (date DESC);
+
+
+CREATE TABLE IF NOT EXISTS prediction(
+    device_id UUID NOT NULL,
+    issued_date DATE NOT NULL,
+    target_date DATE NOT NULL, 
+    temp_c_max NUMERIC(5,2),
+    temp_c_min NUMERIC(5,2),
+    model VARCHAR(50) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY(device_id, issued_date, target_date),
+
+    CONSTRAINT dht22_prediction_device_fk
+        FOREIGN KEY (device_id)
+        REFERENCES device(device_id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT,
+
+    CONSTRAINT target_date_greater_than_issued_at_date_check CHECK (target_date>issued_date),
+    CONSTRAINT temp_ranges_chck CHECK(temp_c_max > -100 AND temp_c_max < 80 AND temp_c_min > -100 AND temp_c_min < 80)
+);
