@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, date
 from uuid import UUID
 
 class ReadingCreate(BaseModel):
@@ -34,3 +34,12 @@ class DeviceListItem(BaseModel):
     status:str
     location:str | None = None
     last_seen: datetime | None = None
+
+class PredictionResponse(BaseModel):
+    device_id:UUID
+    based_on_date: date
+    target_date: date
+    temp_c_max: float |None = Field(ge=-100, le =80) 
+    temp_c_min: float | None = Field(ge=-100, le =80) 
+    model:str
+    created_at: datetime | None = None

@@ -63,7 +63,7 @@ class Prediction(Base):
     __tablename__="prediction"
 
     device_id = Column(UUID(as_uuid=True), ForeignKey("device.device_id", onupdate="CASCADE", ondelete="RESTRICT"), primary_key=True) #device.device_id refers to table not class
-    issued_date = Column(Date, primary_key=True)
+    based_on_date = Column(Date, primary_key=True)
     target_date = Column(Date, primary_key=True)
     temp_c_max = Column(Numeric(5,2), nullable=True)
     temp_c_min = Column(Numeric(5,2), nullable=True)

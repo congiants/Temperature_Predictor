@@ -799,7 +799,7 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
   set "#Best results" for min as well. They are trained on Open-Meteo
   from 1979 onward and saved with `joblib` to `models/ridge_v1.joblib`,
   one dictionary holding the models (day order 1–7) and their predictor
-  lists. The file is a derived artifact and is not committed. Work moves
+  lists. The file (6.6 KB) is committed (644014c), so a fresh clone can serve forecasts without retraining. Work moves
   straight to serving: the `prediction` table, `worker/predictor.py`,
   `GET /predictions` and dashboard v2.
   Model improvements come after the full pipeline works end to end.
@@ -808,9 +808,11 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
   the demo than a better model with no way to serve it. The v1 recipe
   already gives MAE ~1.6 °C (day 1) to ~2.9 °C (day 7) for max
   temperature.
-- **Split used:** train 1979-01-01 → 2024-12-31, test 2025-01-01 onward,
-  the same for max and min. The user moved the split in the notebook, so
-  it replaces D-035's 2022+ test period.
+- **Split used:** max models: train 1979-01-01 → 2024-12-31, test
+  2025-01-01 onward (the user moved the split in the notebook, replacing
+  D-035's 2022+ test period). The saved min models still use the older
+  split: train up to 2021-12-31 (from 1950), test 2022 onward, day-1 MAE
+  1.16 °C. Aligning the two is on the "improve later" list.
 - **Supersedes / defers:** D-037 (forward feature selection) and the
   cross-validation model selection in D-035 are deferred to "if time
   allows" or the report's Future work. D-033 (1979 window) and D-034
@@ -825,13 +827,13 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
 - **Decision:** A new table `prediction` in "long" format. Each predictor
   run writes 7 rows per device, one per forecast day. Columns:
   `device_id` (UUID, FK to `device`, `ON UPDATE CASCADE` / `ON DELETE
-  RESTRICT` like the other tables), `issued_date` (DATE, the day of the
+  RESTRICT` like the other tables), `based_on_date` (DATE, the day of the
   data the forecast was made from), `target_date` (DATE, the day being
   forecast), `temp_c_max` and `temp_c_min` (NUMERIC(5,2), the predicted
   values, named like the `dht22_aggregate` columns), `model`
   (e.g. `ridge_v1`) and `created_at` (TIMESTAMPTZ, default `NOW()`).
-  Primary key = (`device_id`, `issued_date`, `target_date`). CHECKs:
-  `target_date > issued_date`, and both temperatures above −100 and below 80
+  Primary key = (`device_id`, `based_on_date`, `target_date`). CHECKs:
+  `target_date > based_on_date`, and both temperatures above −100 and below 80
   (the sensor table uses −80..80). No extra index: the primary key's index already serves
   "latest forecast for this device".
 - **Why:** One row per forecast day is the standard layout for forecast
@@ -843,9 +845,104 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
   D-021/D-022). `model` shows which model made which forecast
   once v2 exists. The CHECKs are defense in depth: an off-by-one date
   bug or an absurd prediction fails loudly instead of being stored.
+- **Renamed 2026-09-25:** `issued_date` → `based_on_date`. The user
+  found `issued_date` next to `created_at` confusing: both sounded like
+  "when the forecast was made". The new name says what the column means:
+  the forecast is based on sensor data up to this day. `target_date` and
+  `created_at` keep their names. The table was empty, so the live column
+  was renamed with `ALTER TABLE … RENAME COLUMN`; the primary key and
+  CHECK followed automatically.
 - **Alternatives rejected:** (B) One row per run with 14 columns
   (`max_d1` … `min_d7`): one INSERT per run, but charting and comparing
   with actual values means unpacking 14 columns, and changing the number
   of forecast days means changing the table.
 - **Status:** ✅ Decided 2026-09-24. The user accepted the recommendation
   (A): "prediction sounds good".
+
+## D-040 · GET /predictions: latest forecast by default, older ones by date (2026-09-25)
+
+- **Decision:** `GET /prediction` (singular path, as written in the
+  code) takes a **required** `device_id` and an
+  optional `based_on_date`. Without a date, it returns the 7 rows of that
+  device's newest forecast, found with `MAX(based_on_date)`. With a date, it
+  returns the 7 rows of the forecast made on that day. Rows are sorted by
+  `target_date` (day 1 → day 7). A device or date with no forecast returns
+  an empty list, not 404 (same rule as GET /readings). The response schema
+  `PredictionResponse` returns `device_id`, `based_on_date`, `target_date`,
+  `temp_c_max`, `temp_c_min`, `model` and `created_at`.
+- **Why:** The dashboard's normal question is "what is the forecast right
+  now?", so the API answers it directly and the dashboard stays simple
+  (D-019). Old forecasts matter because storing them is what makes a
+  real-world check possible, comparing a past forecast with what the sensor
+  later measured (D-036). Adding the optional date costs one `if`, the same
+  "conditionally filter" pattern as GET /readings. `device_id` is required
+  because a forecast only makes sense for one sensor.
+- **Alternatives rejected:** (A) Latest only: simplest, but old forecasts
+  would be unreachable. (B) A plain list like GET /readings (optional
+  device, `limit`, newest first): the dashboard would receive many
+  forecast runs mixed together and have to find the newest one itself.
+- **Scope:** The API supports old forecasts now. The dashboard's "pick an
+  old date" control comes after the main pipeline works (Saturday buffer
+  or Future work).
+- **Status:** ✅ Decided 2026-09-25. The user asked whether the UI should
+  show old forecasts, which led to option C, and chose C.
+
+## D-041 · Model v2: drop the 30-day features so a forecast needs only one day of sensor data (2026-09-25)
+
+- **Decision:** Remove `avg_max_month` (30-day rolling mean of max) and
+  `daily_avg_offset_max` (today's max minus that mean) from the model's
+  inputs. Model v2 uses only **one day** of data: the six daily sensor
+  columns `temp_c_max`, `temp_c_min`, `temp_c_avg`, `humidity_max`,
+  `humidity_min`, `humidity_avg`, the user's choice when retraining. The
+  same six feed all 14 Ridge models (7 max, 7 min), and they have exactly
+  the same names as the `dht22_aggregate` columns, so the predictor can
+  pass an aggregate row straight to the model. The user saved it over
+  `models/ridge_v1.joblib`: the file keeps the v1 name but holds v2 (the
+  original v1 is in git history, commit 644014c). The predictor reads
+  one day of `dht22_aggregate` per device.
+- **Result (test period, MAE °C):** max days 1–7: 1.62, 2.19, 2.44, 2.54,
+  2.66, 2.73, 2.74 (v1: 1.62 … 2.91). Min day 1: 1.10 (v1: 1.16). v2
+  matches v1 on day 1 and is **better** from day 3 onward. Adding humidity
+  and the daily average made up for the lost 30-day mean.
+- **Why:** Cold start. When `worker/predictor.py` was designed, the
+  balcony sensor had 23 readings and no complete day, and v1 needs 30
+  days of daily max/min for its rolling-mean features: no forecast before
+  late October. Changing the model so it needs only what the sensor
+  already provides is the simplest fix, with no second data source and no
+  extra code in the predictor. It extends D-026 (features only from
+  sensor columns) to "features only from history the sensor has".
+- **Cost / later:** v2 has no feature for the time of year. Day-of-year
+  features (sine/cosine of the date) could add that without needing any
+  history. Listed as a later improvement.
+- **Alternatives rejected:** (A) Fill missing days from Open-Meteo's API
+  at prediction time: sensible forecasts at once, but it mixes two data
+  sources and adds download and merge code. (B) Average over whatever
+  sensor days exist: meaningless inputs until about 30 days of data.
+  (C) Wait for 30 sensor days: nothing to demo before late October.
+- **Supersedes:** the predictor list in D-038.
+- **Status:** ✅ Decided 2026-09-25 (the user's call: "we just change the
+  ML, remove that predictor").
+
+## D-042 · The predictor's input query lives in `predictor.py`, not in the database (2026-09-25)
+
+- **Decision:** The query that picks each device's newest **finished** day
+  (`SELECT DISTINCT ON (device_id) * FROM dht22_aggregate WHERE date <
+  CURRENT_DATE ORDER BY device_id, date DESC`) is a SQL string inside
+  `worker/predictor.py`, the same pattern as `aggregator.py`. Today is
+  excluded because its max/min are not final until the day ends.
+- **Why:** The user asked whether this belongs in the database as a stored
+  procedure. The ML part cannot run there: the models are scikit-learn
+  Python objects, and running Python inside Postgres needs an extension
+  (PL/Python) that the container lacks and that widens the attack
+  surface. For the query alone, keeping it next to the code that uses it
+  means one place to read and one file to change, versioned together in
+  git, with no `init.sql` + live-database step. The database keeps its job
+  of storing and guarding data (keys, CHECKs); application logic stays in
+  the application.
+- **Alternatives rejected:** (B) A database VIEW: reusable by other
+  programs, but only one program needs it, and it would be one more object
+  to keep in sync in `init.sql` and the live database. (C) A stored
+  procedure for the whole job: impossible for the ML step, and the hardest
+  option to test and debug.
+- **Status:** ✅ Decided 2026-09-25. The user went on to write the query in
+  `predictor.py` (option A).

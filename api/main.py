@@ -1,12 +1,13 @@
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer 
 from sqlalchemy.orm import Session
-from datetime import datetime,timezone
+from datetime import datetime,timezone, date
 from database import get_db
-from models import DHT22, Device 
-from schemas import ReadingCreate, ReadingResponse, DeviceCreate, DeviceResponse, DeviceListItem
+from models import DHT22, Device, Prediction 
+from schemas import ReadingCreate, ReadingResponse, DeviceCreate, DeviceResponse, DeviceListItem, PredictionResponse
 from auth import verify_token, generate_token, hash_token
 from uuid import UUID
+from sqlalchemy import func
 
 app = FastAPI() #Object of FastAPI class
 
@@ -84,3 +85,11 @@ def get_readings_list(device_id: UUID | None = None,  limit: int = Query(default
     readings = readings.order_by(DHT22.ts.desc()).limit(limit).all()
     return readings
 
+#I wanna get a new prediction
+@app.get("/prediction", response_model=list[PredictionResponse], status_code=200)
+def get_prediction(device_id: UUID, based_on_date: date | None = None, db: Session = Depends(get_db)):
+    predictions = db.query(Prediction)
+    if based_on_date == None:
+        based_on_date = db.query(func.max(Prediction.based_on_date)).filter(Prediction.device_id == device_id).scalar()
+    predictions = predictions.filter(Prediction.based_on_date == based_on_date, Prediction.device_id == device_id).order_by(Prediction.target_date).all()
+    return predictions
