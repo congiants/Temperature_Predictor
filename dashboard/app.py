@@ -19,3 +19,14 @@ else:
     df["ts"] = pd.to_datetime(df["ts"])
     df = df.set_index("ts")
     st.line_chart(df[["temp_c", "humidity"]])
+
+st.subheader("7-day forecast")
+forecast = requests.get("http://localhost:8000/prediction", params={"device_id": chosen["device_id"]}).json()
+if len(forecast) == 0:
+    st.info("No forecast yet")
+else:
+    df = pd.DataFrame(forecast)
+    df["target_date"] = pd.to_datetime(df["target_date"])
+    df = df.set_index("target_date")
+    st.write("Based on data up to:", forecast[0]["based_on_date"])
+    st.line_chart(df[["temp_c_max", "temp_c_min"]])
