@@ -27,6 +27,10 @@ ON CONFLICT (device_id, date) DO UPDATE SET
     reading_count = EXCLUDED.reading_count
 """
 
-with engine.begin() as conn:
-    result = conn.execute(text(DAILY_AGG_SQL))
-    print(f"Upserted {result.rowcount} rows")
+def run_aggregation():
+    with engine.begin() as conn:
+        result = conn.execute(text(DAILY_AGG_SQL))
+        print(f"Upserted {result.rowcount} rows")
+
+if __name__ == "__main__":
+    run_aggregation()

@@ -946,3 +946,32 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
   option to test and debug.
 - **Status:** ✅ Decided 2026-09-25. The user went on to write the query in
   `predictor.py` (option A).
+
+## D-043 · Automatic daily jobs with APScheduler in `worker/scheduler.py` (2026-09-25)
+
+- **Decision:** Aggregation and prediction run automatically once a day.
+  `aggregator.py` and `predictor.py` wrap their work in functions
+  (`run_aggregation()`, `run_prediction()`), each with an
+  `if __name__ == "__main__":` guard so manual runs still work.
+  `worker/scheduler.py` imports both and uses APScheduler's
+  `BlockingScheduler` (timezone `Europe/Athens`) with a daily `cron` job
+  that runs aggregation, **then** prediction, inside `try/except` with a
+  logged line per run, so one failed night does not stop the scheduler.
+  The exact run time depends on the day-boundary choice (UTC vs Athens
+  days), decided separately.
+- **Why:** Without it, the dashboard only changes when someone runs two
+  scripts by hand, and a stored forecast goes stale (D-036). APScheduler
+  is a standard Python library: timing, time zones and cron-style rules
+  are handled for us, and it runs on Windows, Linux and later in a Docker
+  container. Both jobs are upserts, so a retry or a double run never
+  duplicates rows.
+- **Alternatives rejected:** (A) Manual runs (the D-027 plan): no work,
+  but nothing updates by itself. (B) Windows Task Scheduler + `.bat`
+  file: quick, but Windows-only and invisible to the code base. A
+  hand-written `while True` + `sleep` loop: it works, but re-implements
+  timing, time zones and missed runs.
+- **Known limits:** The scheduler lives in a terminal on the laptop. If
+  the window closes or the laptop sleeps, it stops. Running it in its own
+  container with `restart: unless-stopped` stays Future work.
+- **Supersedes:** the "automatic scheduler" cut in D-027.
+- **Status:** ✅ Decided 2026-09-25 (user chose C: "lets do it").
