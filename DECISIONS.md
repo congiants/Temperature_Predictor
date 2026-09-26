@@ -813,6 +813,8 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
   D-035's 2022+ test period). The saved min models still use the older
   split: train up to 2021-12-31 (from 1950), test 2022 onward, day-1 MAE
   1.16 °C. Aligning the two is on the "improve later" list.
+  → Aligned 2026-09-27 (see D-044): the min models also train on
+  1979–2024 and test on 2025 onward.
 - **Supersedes / defers:** D-037 (forward feature selection) and the
   cross-validation model selection in D-035 are deferred to "if time
   allows" or the report's Future work. D-033 (1979 window) and D-034
@@ -975,3 +977,36 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
   container with `restart: unless-stopped` stays Future work.
 - **Supersedes:** the "automatic scheduler" cut in D-027.
 - **Status:** ✅ Decided 2026-09-25 (user chose C: "lets do it").
+
+## D-044 · Table III evaluation: one test period, persistence and climatology baselines (2026-09-26)
+
+- **Decision:** Every number in the report's Table III is measured on the
+  same 616 test days (2025-01-01 → 2026-09-08), for the maximum and the
+  minimum. Two reference forecasts: **persistence** (day n equals today's
+  value) and **climatology** (the 1979–2024 mean for the calendar date,
+  smoothed over 31 days). The minimum models are retrained on 1979–2024,
+  like the maximum models: the notebook's minimum function still had
+  the old split (up to 2021, from 1950; see D-038). Retraining changes
+  no test MAE by more than 0.004 °C (Table III: day 4 2.18 → 2.19).
+- **Why:** One test period makes the maximum and minimum columns
+  comparable. Persistence is the bar set by requirement TR7; climatology
+  is the other standard reference forecast, and the report already
+  defines it. The 1979+ training window (D-033) applies to every model.
+- **Result:** Ridge v2 beats persistence at every horizon (max 1.62 vs
+  1.66 on day 1, 2.74 vs 3.06 on day 7; min 1.10 vs 1.38, 2.41 vs 2.82).
+  Climatology (about 2.38 °C max and 2.16 °C min at every horizon) beats
+  the model from day 3 (max) and day 4 (min), because the model sees
+  today's weather but not the date. Day-of-year features, already in
+  Future work, are the fix to try first.
+- **Alternatives rejected:** (A) Minimum on the notebook's old split
+  (2022+, 1,712 days): the two halves of the table would not be
+  comparable. (B) Keep the saved minimum models trained on 1950–2021
+  (the 2026-09-26 version of this entry): almost the same numbers, but
+  it breaks the 1979+ rule. The user rejected it on 2026-09-27 ("We want
+  only 1979 and onwards for training").
+- **Status:** ✅ Done 2026-09-26 by Claude at the user's request ("run the
+  tests needed for table 3"), with a script outside the repo that
+  reproduces the notebook's numbers first. Minimum split corrected
+  2026-09-27 at the user's instruction: report updated; the user
+  changes the notebook's minimum split and re-runs it to re-save
+  `models/ridge_v1.joblib`.
