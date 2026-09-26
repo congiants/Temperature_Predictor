@@ -12,4 +12,3 @@ data/*
 !data/thessaloniki_openmeteo_raw.csv
 test_token.txt
 secrets.h
-CLAUDE.md

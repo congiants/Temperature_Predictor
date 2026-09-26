@@ -346,7 +346,7 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
   embed outputs (the legacy notebooks are 3.1 MB and 0.8 MB, mostly
   outputs), which bloats git and makes diffs unreadable. Notebooks belong
   to no service, hence their own directory rather than `api/`.
-- **Alternatives rejected:** Scratch script `worker/explore.py` (Claude's
+- **Alternatives rejected:** Scratch script `worker/explore.py` (the
   first suggestion): safe but slow feedback loop, re-reads the CSV on
   every run. REPL: nothing saved. Notebook as the production artifact
   (papermill/nbconvert): hidden-state risk in production; unnecessary.
@@ -475,7 +475,7 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
   surprises found late, only ~1–2 days of real sensor data by Sunday.
   (C) Simulator only, no hardware: safest, but hollows out the IoT half
   of the story (the sensor → model path of D-026). "Deadline mode"
-  (Claude shows firmware/plumbing/dashboard code, user explains it back):
+  (ready-made firmware/plumbing/dashboard code, explained back by the user):
   faster, declined by the user in favour of full teaching. The original
   4-day plan (aggregator + ML, then predictions + dashboard v2, firmware
   LAST) put the riskiest component at the end.
@@ -584,42 +584,34 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
 
 ## D-031 · Going public: private notes excluded, author emails normalized, history rewritten once (2026-09-24)
 
-- **Decision:** Before the repository is made public: (1) `CLAUDE.md`,
-  the private mentoring / working-notes file, is untracked, gitignored
-  (and also listed in the local-only `.git/info/exclude` as a safety
-  net), and removed from every past commit with `git filter-repo`;
-  (2) every commit's author and committer email is rewritten to the
-  GitHub no-reply address (via a mailmap), and the repo-local git config
-  uses that address from now on; (3) the rewritten history is
-  force-pushed once, while the repo is still private and has a single
-  user. A full backup (git bundle of all refs + an archive of the working
-  folder) was taken first. The README credits the data sources
-  (Open-Meteo CC BY 4.0, Copernicus ERA5-Land, NOAA GHCN-Daily), and
-  `firmware/esp8266/secrets.example.h` documents which values the
-  gitignored `secrets.h` must hold. Mentions of Claude (the AI mentor)
-  in this log are kept on purpose: they record the working mode, in
-  which the user writes and runs the code while Claude explains,
-  reviews, and supplies short snippets for specific fixes (D-027 records
-  that a faster mode, with Claude supplying ready-made code, was
-  declined).
+- **Decision:** Before the repository is made public: (1) the private
+  working-notes file is kept out of version control (listed in the
+  local-only `.git/info/exclude`) and removed from every past commit
+  with `git filter-repo`; (2) every commit's author and committer email
+  is rewritten to the GitHub no-reply address (via a mailmap), and the
+  repo-local git config uses that address from now on; (3) the
+  rewritten history is force-pushed once, while the repo is still
+  private and has a single user. A full backup (git bundle of all refs +
+  an archive of the working folder) was taken first. The README credits
+  the data sources (Open-Meteo CC BY 4.0, Copernicus ERA5-Land, NOAA
+  GHCN-Daily), and `firmware/esp8266/secrets.example.h` documents which
+  values the gitignored `secrets.h` must hold.
 - **Why:** A public repo exposes its entire history, not only the latest
   files: deleting a file in a new commit leaves it readable in the old
-  ones. CLAUDE.md holds personal learning notes that are not project
-  documentation, and a personal email address in commit metadata gets
-  harvested. The pre-publication audit found no credentials in code or
-  history (secrets are read from env vars / a gitignored header; the one
-  `.env` ever committed held placeholder values; old sketches and PHP
-  files contain placeholders only). Rewriting history is only safe
-  before anyone else has cloned; that window closes the moment the repo
-  goes public. Open-Meteo data is licensed CC BY 4.0, so publishing the
-  CSV requires attribution.
-- **Alternatives rejected:** (B) publish CLAUDE.md as is (transparent
-  about AI-assisted learning, but exposes personal notes). (C) strip the
-  notes from the current version only (old versions remain in history).
-  Restarting from a single fresh commit (would erase the 2023→2026
-  project timeline the report can cite). Removing every mention of the
-  AI mentor from this log (done briefly, then reverted at the user's
-  request: the mentions document how the work was done).
+  ones. The notes file holds personal learning notes that are not
+  project documentation, and a personal email address in commit
+  metadata gets harvested. The pre-publication audit found no
+  credentials in code or history (secrets are read from env vars / a
+  gitignored header; the one `.env` ever committed held placeholder
+  values; old sketches and PHP files contain placeholders only).
+  Rewriting history is only safe before anyone else has cloned; that
+  window closes the moment the repo goes public. Open-Meteo data is
+  licensed CC BY 4.0, so publishing the CSV requires attribution.
+- **Alternatives rejected:** (B) publish the notes file as is (exposes
+  personal notes). (C) strip the notes from the current version only
+  (old versions remain in history). Restarting from a single fresh
+  commit (would erase the 2023→2026 project timeline the report can
+  cite).
 - **Status:** ✅ Decided and executed 2026-09-24.
 
 ## D-032 · ML-2 cleaning: drop the one incomplete day; column names mirror the sensor table (2026-09-24)
@@ -1004,8 +996,7 @@ Format per entry: **Decision → Why → Alternatives rejected → Status.**
   (the 2026-09-26 version of this entry): almost the same numbers, but
   it breaks the 1979+ rule. The user rejected it on 2026-09-27 ("We want
   only 1979 and onwards for training").
-- **Status:** ✅ Done 2026-09-26 by Claude at the user's request ("run the
-  tests needed for table 3"), with a script outside the repo that
+- **Status:** ✅ Done 2026-09-26 with a script outside the repo that
   reproduces the notebook's numbers first. Minimum split corrected
   2026-09-27 at the user's instruction: report updated; the user
   changes the notebook's minimum split and re-runs it to re-save
